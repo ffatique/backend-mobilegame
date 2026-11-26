@@ -64,7 +64,7 @@ Nas duas rotas de verificação, a resposta contém `status`, `productId`, `gems
 
 **Google Play.** Dê à conta de serviço de compras acesso ao app na Play Console e configure o JSON da credencial no ambiente. Na assinatura push, configure uma conta de serviço para assinar o token OIDC e a audiência esperada em `GOOGLE_RTDN_AUDIENCE`. O e-mail dessa conta deve coincidir com `GOOGLE_RTDN_PUSH_SERVICE_ACCOUNT`. [Notificações da Google Play](https://developer.android.com/google/play/billing/rtdn-reference)
 
-**AdMob.** Configure a URL SSV em cada unidade recompensada e liste seus IDs numéricos em `ADMOB_REWARDED_AD_UNITS`, separados por vírgula. O backend confere a assinatura do Google e a unidade antes de creditar cinco moedas. Cada `transaction_id` pode gerar um único crédito. [Verificação do AdMob](https://developers.google.com/admob/android/ssv)
+**AdMob.** Ao criar o bloco, teste a URL SSV com o campo User ID vazio. O servidor confirma o callback assinado sem conceder moedas. Configure a URL SSV em cada unidade recompensada e liste seus IDs numéricos em `ADMOB_REWARDED_AD_UNITS`, separados por vírgula. O backend confere a assinatura do Google e a unidade antes de creditar cinco moedas. Cada `transaction_id` pode gerar um único crédito. [Verificação do AdMob](https://developers.google.com/admob/android/ssv)
 
 ## Testes
 

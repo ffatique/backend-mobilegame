@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { mockDeep, MockProxy } from 'jest-mock-extended';
@@ -15,14 +15,16 @@ describe('RewardsService', () => {
   let prisma: MockProxy<PrismaService>;
   let verifier: { verify: jest.Mock };
   let service: RewardsService;
+  let config: ConfigService;
 
   beforeEach(() => {
     prisma = mockDeep<PrismaService>();
     verifier = { verify: jest.fn().mockResolvedValue(undefined) };
+    config = new ConfigService({ ADMOB_REWARDED_AD_UNITS: ['au-1'] });
     service = new RewardsService(
       prisma as unknown as PrismaService,
       verifier as unknown as AdmobSsvVerifier,
-      new ConfigService({ ADMOB_REWARDED_AD_UNITS: ['au-1'] }),
+      config,
     );
   });
 
@@ -79,6 +81,23 @@ describe('RewardsService', () => {
 
     expect(out.status).toBe('unknown_user');
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('acknowledges a signed setup callback without a user before any ad units exist', async () => {
+    config.set('ADMOB_REWARDED_AD_UNITS', []);
+    const query = 'ad_unit=au-1&transaction_id=setup';
+    await expect(service.grantFromSsv(query)).resolves.toEqual({ status: 'unknown_user' });
+    expect(verifier.verify).toHaveBeenCalledWith(query);
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('keeps a player reward retryable when ad units have not been configured', async () => {
+    config.set('ADMOB_REWARDED_AD_UNITS', []);
+    await expect(service.grantFromSsv(VALID_QUERY)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('skips a different game ad unit', async () => {
