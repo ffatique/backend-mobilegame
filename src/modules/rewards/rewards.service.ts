@@ -40,9 +40,6 @@ export class RewardsService {
     await this.verifier.verify(rawQuery);
 
     const params = new URLSearchParams(rawQuery);
-    const units = this.config.getOrThrow<string[]>('ADMOB_REWARDED_AD_UNITS');
-    if (!units.length) throw new ServiceUnavailableException('AdMob units are not configured');
-    if (!units.includes(params.get('ad_unit') ?? '')) return { status: 'unknown_ad_unit' };
     const userId = params.get('user_id') ?? '';
     const transactionId = params.get('transaction_id') ?? '';
 
@@ -53,6 +50,10 @@ export class RewardsService {
       );
       return { status: 'unknown_user' };
     }
+
+    const units = this.config.getOrThrow<string[]>('ADMOB_REWARDED_AD_UNITS');
+    if (!units.length) throw new ServiceUnavailableException('AdMob units are not configured');
+    if (!units.includes(params.get('ad_unit') ?? '')) return { status: 'unknown_ad_unit' };
 
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
     if (!user) {
