@@ -20,6 +20,9 @@ model User {
   createdAt      DateTime         @default(now())
   refreshTokens  RefreshToken[]
   purchases      Purchase[]
+  gems           Int              @default(0)
+  adRewardGrants AdRewardGrant[]
+  iapPurchases   IapPurchase[]
 
   @@unique([provider, providerUserId])
   @@map("players")
@@ -55,4 +58,77 @@ model RefreshToken {
   @@index([familyId])
   @@index([expiresAt])
   @@map("refresh_tokens")
+}
+
+enum IapPlatform {
+  APPLE
+  GOOGLE
+}
+
+enum IapEnvironment {
+  PRODUCTION
+  SANDBOX
+}
+
+enum IapPurchaseStatus {
+  GRANTED
+  REFUNDED
+}
+
+model AdRewardGrant {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
+  transactionId String   @unique @db.VarChar(64)
+  adUnit        String?  @db.VarChar(64)
+  adNetwork     String?  @db.VarChar(64)
+  rewardItem    String?  @db.VarChar(32)
+  /// Reward amount reported (and signed) by AdMob. Recorded for auditing; the
+  /// coins actually credited are the server-authoritative `coinsGranted`.
+  rewardAmount  Int
+  coinsGranted  Int
+  /// When AdMob rewarded the user (from the callback `timestamp`).
+  rewardedAt    DateTime
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("ad_reward_grants")
+}
+
+model GemPackDefinition {
+  id        String      @id @default(uuid()) @db.Uuid
+  productId String      @db.VarChar(128)
+  platform  IapPlatform
+  gems      Int
+  isEnabled Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@unique([platform, productId])
+  @@map("gem_pack_definitions")
+}
+
+model IapPurchase {
+  id                 String            @id @default(uuid()) @db.Uuid
+  userId             String?           @db.Uuid
+  platform           IapPlatform
+  environment        IapEnvironment?
+  productId          String?           @db.VarChar(128)
+  storeTransactionId String            @db.Text
+  orderId            String?           @db.VarChar(128)
+  gemsGranted        Int
+  status             IapPurchaseStatus @default(GRANTED)
+  purchasedAt        DateTime?
+  lastAdjustmentAt   DateTime?
+  refundedAt         DateTime?
+  rawPayload         Json?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([platform, storeTransactionId])
+  @@index([userId, createdAt])
+  @@map("iap_purchases")
 }

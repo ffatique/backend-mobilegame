@@ -1,6 +1,6 @@
 # My Little Pier · API
 
-Backend em NestJS com PostgreSQL e Prisma. O jogador entra pelo Google Play Games ou Apple Game Center, consulta o perfil e compra melhorias com moedas. Cada instalação desta API usa seu próprio banco, segredo JWT e credenciais de plataforma.
+Backend em NestJS com PostgreSQL e Prisma. O jogador entra pelo Google Play Games ou Apple Game Center, consulta o perfil e compra melhorias com moedas. A API também recebe compras de pacotes de gemas e recompensas de anúncios. Cada instalação desta API usa seu próprio banco, segredo JWT e credenciais de plataforma.
 
 ## Rodar localmente
 
@@ -32,7 +32,7 @@ As chamadas com sessão usam `Authorization: Bearer <accessToken>`. Nos dois log
 | `POST /users/apple` | `playerId` com o `teamPlayerID`, `publicKeyUrl`, `signature` e `salt` em Base64, `timestamp` em milissegundos | Mesmos campos do login Google |
 | `POST /auth/refresh` | `refreshToken` | Novos tokens e prazos de expiração |
 | `POST /auth/logout` | Com sessão, envie `refreshToken` do aparelho ou `allDevices: true` | HTTP 204. O token de acesso expira no prazo original |
-| `GET /users/me` | Sessão | `id`, `name`, `createdAt`, `coins` e `ownedItemIds` |
+| `GET /users/me` | Sessão | `id`, `name`, `createdAt`, `coins`, `gems` e `ownedItemIds` |
 | `GET /shop` | Sessão | Lista de produtos com `itemId`, `category`, `priceCoins` e `requires` |
 | `POST /shop/buy` | Sessão e corpo como `{"itemId":"large_basket"}` | `status`, `itemId`, `pricePaid` e saldo restante em `coins` |
 | `GET /health` | Pública | Estado e tempo de atividade do processo |
@@ -44,6 +44,27 @@ O cliente deve guardar o novo refresh token a cada renovação. Reapresentar um 
 O perfil começa com zero moedas. A loja usa os cinco produtos, preços e pré-requisitos da bancada do Unity. O servidor debita as moedas e grava a melhoria na mesma transação. Saldo insuficiente retorna 400, produto desconhecido retorna 404 e uma compra repetida ou bloqueada por pré-requisito retorna 409. Se a conexão cair após confirmar a compra, consulte `GET /users/me` para recuperar o saldo e as melhorias.
 
 O jogo atual ganha moedas no aparelho. Para ativar compras online, falta integrar o cliente e registrar no servidor os créditos por venda de pescado e entrega de encomendas, com um identificador por operação para evitar crédito duplicado em uma reconexão. A importação do save existente também precisa de uma regra para conciliar moedas e melhorias entre aparelhos.
+
+## Compras nas lojas e anúncios
+
+Cadastre os produtos reais do jogo em `GemPackDefinition` pelo Prisma Studio, um registro por plataforma (`APPLE` ou `GOOGLE`), com o `productId` da loja, a quantidade de `gems` e `isEnabled`. O catálogo começa vazio. Configure pacotes consumíveis de uma unidade por transação. As gemas ficam em saldo separado das moedas da bancada. Por padrão, os recibos de sandbox ficam registrados com crédito zero. Use `IAP_CREDIT_SANDBOX=true` no ambiente de testes para exercitar o crédito.
+
+| Rota | Quem envia | Uso |
+| --- | --- | --- |
+| `POST /iap/apple/verify` | Unity, com JWT | Envia `transactionId`. O StoreKit deve receber o UUID do jogador em `appAccountToken` ao iniciar a compra. |
+| `POST /iap/google/verify` | Unity, com JWT | Envia `productId` e `purchaseToken`. Configure `obfuscatedAccountId` com o UUID do jogador ao abrir o Play Billing. |
+| `POST /iap/apple/notifications/production` | App Store Connect | Recebe `signedPayload` das notificações V2 de produção. |
+| `POST /iap/apple/notifications/sandbox` | App Store Connect | Recebe notificações V2 de sandbox, incluindo TestFlight. |
+| `POST /iap/google/rtdn` | Google Cloud Pub/Sub | Push autenticado com o envelope padrão. Ative notificações de produtos avulsos na Play Console. |
+| `GET /rewards/admob/ssv` | AdMob | Retorno de verificação de anúncio recompensado. No SDK, defina `user_id` como o UUID do jogador. |
+
+Nas duas rotas de verificação, a resposta contém `status`, `productId`, `gemsGranted`, `gems` e `coins`. O servidor valida a compra na loja, confere a conta e registra o crédito uma vez, mesmo quando o webhook e o Unity confirmam a mesma compra. Um reembolso retira as gemas concedidas e pode deixar o saldo negativo.
+
+**Apple.** Cadastre as duas URLs HTTPS no App Store Connect. Configure o ID numérico do app, bundle ID, emissor, ID da chave e chave privada de compras no ambiente. O backend valida a assinatura Apple e separa produção de sandbox. [App Store Server Notifications](https://developer.apple.com/documentation/appstoreservernotifications)
+
+**Google Play.** Dê à conta de serviço de compras acesso ao app na Play Console e configure o JSON da credencial no ambiente. Na assinatura push, configure uma conta de serviço para assinar o token OIDC e a audiência esperada em `GOOGLE_RTDN_AUDIENCE`. O e-mail dessa conta deve coincidir com `GOOGLE_RTDN_PUSH_SERVICE_ACCOUNT`. [Notificações da Google Play](https://developer.android.com/google/play/billing/rtdn-reference)
+
+**AdMob.** Configure a URL SSV em cada unidade recompensada e liste seus IDs numéricos em `ADMOB_REWARDED_AD_UNITS`, separados por vírgula. O backend confere a assinatura do Google e a unidade antes de creditar cinco moedas. Cada `transaction_id` pode gerar um único crédito. [Verificação do AdMob](https://developers.google.com/admob/android/ssv)
 
 ## Testes
 
