@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AuthProviderType {
+  GOOGLE_PLAY
+  APPLE_GAMECENTER
+}
+
+model User {
+  id             String           @id @default(uuid()) @db.Uuid
+  provider       AuthProviderType
+  providerUserId String           @db.VarChar(256)
+  name           String           @db.VarChar(32)
+  coins          Int              @default(0)
+  createdAt      DateTime         @default(now())
+  refreshTokens  RefreshToken[]
+  purchases      Purchase[]
+
+  @@unique([provider, providerUserId])
+  @@map("players")
+}
+
+model Purchase {
+  userId    String   @db.Uuid
+  itemId    String   @db.VarChar(64)
+  pricePaid Int
+  boughtAt  DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, itemId])
+  @@map("purchases")
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+  familyId     String    @db.Uuid
+  tokenHash    String    @unique @db.VarChar(64) // hex sha-256
+  deviceId     String?   @db.Uuid
+  userAgent    String?   @db.VarChar(255)
+  ipHash       String?   @db.VarChar(64)
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+  revokedAt    DateTime?
+  replacedById String?   @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
