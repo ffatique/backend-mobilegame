@@ -18,6 +18,11 @@ model User {
   name           String           @db.VarChar(32)
   coins          Int              @default(0)
   createdAt      DateTime         @default(now())
+  avatar         String?
+  pierSave       PierSave?
+  catches        PierCatch[]
+  firstFriends   Friendship[]     @relation("first")
+  secondFriends  Friendship[]     @relation("second")
   refreshTokens  RefreshToken[]
   purchases      Purchase[]
   gems           Int              @default(0)
@@ -131,4 +136,45 @@ model IapPurchase {
   @@unique([platform, storeTransactionId])
   @@index([userId, createdAt])
   @@map("iap_purchases")
+}
+
+model PierSave {
+  playerId String   @id @db.Uuid
+  player   User     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  snapshot String   @default("") @db.Text
+  revision Int      @default(0)
+  mutation String?  @db.Uuid
+  bait     Int      @default(12)
+  day      DateTime @default(dbgenerated("(now() AT TIME ZONE 'UTC')::date")) @db.Date
+
+  @@index([day])
+  @@map("pier_saves")
+}
+
+model Friendship {
+  low      String  @db.Uuid
+  high     String  @db.Uuid
+  sender   String  @db.Uuid
+  accepted Boolean @default(false)
+  first    User    @relation("first", fields: [low], references: [id], onDelete: Cascade)
+  second   User    @relation("second", fields: [high], references: [id], onDelete: Cascade)
+
+  @@id([low, high])
+  @@index([high])
+  @@map("friendships")
+}
+
+model PierCatch {
+  playerId String   @db.Uuid
+  revision Int
+  species  Int
+  rare     Boolean
+  length   Int
+  grams    Int
+  size     String   @db.VarChar(2)
+  caughtAt DateTime @default(now())
+  player   User     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@id([playerId, revision])
+  @@map("pier_catches")
 }

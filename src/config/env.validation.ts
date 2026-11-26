@@ -29,6 +29,7 @@ export const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('1h'),
   REFRESH_TOKEN_EXPIRES_IN_DAYS: z.coerce.number().int().positive().default(60),
 
+  CRON_SECRET: optionalSetting(z.string().min(16)),
   GOOGLE_PLAY_GAMES_CLIENT_ID: z.string().optional(),
   GOOGLE_PLAY_GAMES_CLIENT_SECRET: z.string().optional(),
 

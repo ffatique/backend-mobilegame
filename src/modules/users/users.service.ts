@@ -8,11 +8,23 @@ export class UsersService {
 
   async signIn(identity: VerifiedProviderIdentity, preferredName?: string) {
     const { provider, providerUserId } = identity;
-    const name = preferredName?.trim() || identity.displayName?.trim() || 'Pescador';
+    const google = provider === 'GOOGLE_PLAY';
+    const displayName = (
+      google ? identity.displayName : preferredName?.trim() || identity.displayName
+    )?.trim();
+    const name = Array.from(displayName || 'Pescador')
+      .slice(0, 32)
+      .join('');
+    const verifiedProfile = google ? { name, avatar: identity.avatar ?? null } : {};
     return this.prisma.user.upsert({
       where: { provider_providerUserId: { provider, providerUserId } },
-      create: { provider, providerUserId, name: Array.from(name).slice(0, 32).join('') },
-      update: { providerUserId },
+      create: {
+        provider,
+        providerUserId,
+        name,
+        ...verifiedProfile,
+      },
+      update: { providerUserId, ...verifiedProfile },
       select: { id: true },
     });
   }
