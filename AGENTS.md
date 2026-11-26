@@ -1,6 +1,6 @@
 # Backend do My Little Pier
 
-Este repositório contém a API NestJS do jogo. O repositório do Polybots serve apenas para consulta. Use credenciais e bancos próprios do My Little Pier.
+Este repositório contém a API NestJS do jogo. Use outros repositórios de backend apenas para consulta. Use credenciais e bancos próprios do My Little Pier.
 
 ## Entregas
 
