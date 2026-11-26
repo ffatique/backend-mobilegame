@@ -10,6 +10,7 @@ export interface VerifiedProviderIdentity {
   providerUserId: string;
   /** Optional display name returned by the provider, used as a default username. */
   displayName?: string;
+  avatar?: string;
 }
 
 /**

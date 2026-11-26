@@ -44,7 +44,11 @@ export class GooglePlayGamesVerifier implements ProviderVerifier {
       }
       oauth2Client.setCredentials(tokens);
 
-      const { data } = await oauth2Client.request<{ playerId?: string; displayName?: string }>({
+      const { data } = await oauth2Client.request<{
+        playerId?: string;
+        displayName?: string;
+        avatarImageUrl?: string;
+      }>({
         url: 'https://games.googleapis.com/games/v1/players/me',
       });
 
@@ -56,10 +60,11 @@ export class GooglePlayGamesVerifier implements ProviderVerifier {
         provider: this.provider,
         providerUserId: data.playerId,
         displayName: data.displayName ?? undefined,
+        avatar: data.avatarImageUrl,
       };
     } catch (err) {
       // Avoid leaking provider error details to the client.
-      this.logger.warn(`Google Play Games verification failed: ${(err as Error).message}`);
+      this.logger.warn('Google Play Games verification failed');
       if (err instanceof UnauthorizedException) throw err;
       throw new UnauthorizedException('Invalid Google Play Games auth code');
     }

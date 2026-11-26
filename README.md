@@ -24,7 +24,7 @@ A API atende em `http://localhost:3000`. No emulador Android, o host é `10.0.2.
 
 ## Contrato para o Unity
 
-As chamadas com sessão usam `Authorization: Bearer <accessToken>`. Nos dois logins, a primeira chamada cria a conta. O próximo login com a mesma identidade recupera o mesmo `playerId`. Google e Apple têm contas independentes nesta versão. O campo opcional `name` define o nome na criação.
+As chamadas com sessão usam `Authorization: Bearer <accessToken>`. Nos dois logins, a primeira chamada cria a conta. O próximo login com a mesma identidade recupera o mesmo `playerId`. Google e Apple têm contas independentes nesta versão. O Play Games fornece o nome público e o avatar a cada login. A conta Apple pode usar o campo opcional `name` na criação.
 
 | Rota | Entrada | Resposta |
 | --- | --- | --- |
@@ -80,3 +80,21 @@ Os testes HTTP usam PostgreSQL real e simulam as respostas dos provedores de ide
 DATABASE_URL="$TEST_DATABASE_URL" npm run prisma:deploy
 npm run test:e2e -- --runInBand
 ```
+
+## Progresso e amizades da v0.10.0
+
+O cliente Android usa `https://api.mylittlepier.com`. As rotas `/pier` exigem o JWT da conta. O servidor obtém o dono do progresso pelo token. A chave composta de provedor e identidade externa garante uma conta por jogador. A primeira leitura cria um save vazio com 12 iscas. O instantâneo privado guarda a economia da pescaria, o álbum, o cesto, os equipamentos, os postos, as missões e o barco. Os saldos comerciais de moedas e gemas do servidor continuam protegidos nas rotas de compras e recompensas.
+
+| Rota | Operação |
+| --- | --- |
+| `GET /pier/state` | Devolve o save, a revisão, as iscas do dia UTC e o perfil. |
+| `POST /pier/state` | Grava `snapshot`, revisão esperada, UUID da operação, gasto de zero ou uma isca e captura opcional. O bloqueio de linha serializa o gasto e a reposição. Uma revisão antiga retorna 409. |
+| `GET /pier/stats`, `GET /pier/history?before=N` | Totais e maior peixe, ou até 50 capturas da conta por página. Cada captura tem a revisão da gravação como chave e conserva a data da pescaria mesmo se o envio atrasar. |
+| `GET /pier/players?q=Ana` | Busca por prefixo de 2 a 32 caracteres, até 30 resultados com ID, nome e avatar. |
+| `GET /pier/friends` | Amizades e pedidos de entrada e saída da própria conta. |
+| `POST /pier/friends/:id` | Recebe `action` com `send`, `accept` ou `decline`. Só o destinatário pode decidir sobre um pedido. |
+| `GET /jobs/bait` | A Vercel envia `Authorization: Bearer` com o valor de `CRON_SECRET`. |
+
+A migração `20261126010000_pier` cria índices para a data das iscas, o prefixo do nome, os dois lados da amizade e o histórico por jogador e revisão. A chave única do par torna a amizade simétrica e impede duplicatas. As relações com o jogador e a restrição que exige dois participantes diferentes também valem no banco.
+
+No painel do projeto Vercel, configure `CRON_SECRET` como Sensitive em Production. O agendamento em `vercel.json` usa `0 0 * * *` (UTC). O cron repõe o saldo de todas as contas com data anterior. A primeira leitura ou gravação após a virada aplica a mesma regra se o cron atrasar. A função diária e o PostgreSQL consomem recursos do plano contratado. Nenhum dado de save legado é importado pela migração.
