@@ -1,6 +1,6 @@
 {
   "name": "backend-mobilegame",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "API de jogadores e loja do My Little Pier.",
   "private": true,
   "license": "UNLICENSED",
@@ -22,6 +22,8 @@
     "vercel-build": "prisma generate && prisma migrate deploy && nest build"
   },
   "dependencies": {
+    "@apple/app-store-server-library": "^3.1.0",
+    "@googleapis/androidpublisher": "^42.3.1",
     "@nestjs/common": "^11.1.19",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.1.19",

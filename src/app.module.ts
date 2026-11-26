@@ -10,6 +10,9 @@ import { UsersModule } from './modules/users/users.module';
 import { HealthModule } from './modules/health/health.module';
 import { ShopModule } from './modules/shop/shop.module';
 
+import { IapModule } from './modules/iap/iap.module';
+import { RewardsModule } from './modules/rewards/rewards.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -26,6 +29,8 @@ import { ShopModule } from './modules/shop/shop.module';
     UsersModule,
     HealthModule,
     ShopModule,
+    IapModule,
+    RewardsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -24,6 +24,7 @@ export class UsersService {
         id: true,
         name: true,
         coins: true,
+        gems: true,
         createdAt: true,
         purchases: { orderBy: { itemId: 'asc' }, select: { itemId: true } },
       },
