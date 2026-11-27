@@ -29,28 +29,105 @@ export class PierService {
         where: { id },
         select: { ...publicFields, coins: true, gems: true },
       });
-      return { ...save, ...profile, day: save.day.toISOString().slice(0, 10) };
+      const used = await tx.baitOperation.count({
+        where: { playerId: id, kind: 'ad', day: save.day },
+      });
+      return {
+        ...save,
+        ...profile,
+        bait: save.bait + save.bonusBait,
+        adSlots: Math.max(0, 3 - used),
+        day: save.day.toISOString().slice(0, 10),
+      };
     });
   }
 
   async save(id: string, dto: SaveDto) {
     return this.db.$transaction(async (tx) => {
       const state = await this.load(tx, id);
-      if (state.mutation === dto.mutation) return state;
-      if (state.revision !== dto.revision || state.bait < dto.spend)
+      if (state.mutation === dto.mutation) {
+        const caught = await tx.pierCatch.findUnique({
+          where: { playerId_revision: { playerId: id, revision: state.revision } },
+        });
+        return {
+          ...state,
+          bait: state.bait + state.bonusBait,
+          offer: caught ? await this.adOffer(tx, id, state.day) : 0,
+        };
+      }
+      if (state.revision !== dto.revision || state.bait + state.bonusBait < dto.spend)
         throw new ConflictException('Reload progress');
       const revision = state.revision + 1;
       if (dto.capture)
         await tx.pierCatch.create({ data: { playerId: id, revision, ...dto.capture } });
-      return tx.pierSave.update({
+      const saved = await tx.pierSave.update({
         where: { playerId: id },
         data: {
           revision,
           snapshot: dto.snapshot,
           mutation: dto.mutation,
-          bait: { decrement: dto.spend },
+          bait: { decrement: Math.min(state.bait, dto.spend) },
+          bonusBait: { decrement: Math.max(0, dto.spend - state.bait) },
         },
       });
+      const offer = dto.capture ? await this.adOffer(tx, id, state.day) : 0;
+      return { ...saved, bait: saved.bait + saved.bonusBait, offer };
+    });
+  }
+
+  private async adOffer(tx: Prisma.TransactionClient, id: string, day: Date) {
+    const milestone = await tx.pierCatch.count({ where: { playerId: id } });
+    if (!milestone || milestone % 5) return 0;
+    const used = await tx.baitOperation.count({ where: { playerId: id, kind: 'ad', day } });
+    if (used >= 3) return 0;
+    const opened = await tx.baitOperation.findUnique({
+      where: { playerId_milestone: { playerId: id, milestone } },
+    });
+    return opened ? 0 : milestone;
+  }
+
+  async baitOperation(id: string, key: string, kind: 'ad' | 'purchase', milestone?: number) {
+    return this.db.$transaction(async (tx) => {
+      const state = await this.load(tx, id);
+      const prior = await tx.baitOperation.findUnique({ where: { id: key } });
+      if (prior) {
+        if (
+          prior.playerId !== id ||
+          prior.kind !== kind ||
+          (kind === 'ad' && prior.milestone !== milestone)
+        )
+          throw new ConflictException('Operation already used');
+        return { ticket: key };
+      }
+      if (kind === 'ad') {
+        const count = await tx.pierCatch.count({ where: { playerId: id } });
+        if (!milestone || milestone % 5 !== 0 || milestone !== Math.floor(count / 5) * 5)
+          throw new ConflictException('No offer available');
+        const used = await tx.baitOperation.count({
+          where: { playerId: id, kind, day: state.day },
+        });
+        if (
+          used >= 3 ||
+          (await tx.baitOperation.findUnique({
+            where: { playerId_milestone: { playerId: id, milestone } },
+          }))
+        )
+          throw new ConflictException('Offer already used');
+      } else {
+        const paid = await tx.user.updateMany({
+          where: { id, gems: { gte: 1 } },
+          data: { gems: { decrement: 1 } },
+        });
+        if (!paid.count) throw new ConflictException('Not enough gems');
+        await tx.pierSave.update({
+          where: { playerId: id },
+          data: { bonusBait: { increment: 3 } },
+        });
+      }
+      await tx.baitOperation.create({
+        data: { id: key, playerId: id, day: state.day, kind, milestone },
+      });
+      return { ticket: key };
     });
   }
 

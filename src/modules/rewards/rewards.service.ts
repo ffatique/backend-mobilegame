@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ServiceUnavailableException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdmobSsvVerifier } from './admob-ssv.verifier';
@@ -10,7 +11,12 @@ export const REWARD_COINS = 5;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type GrantStatus = 'granted' | 'duplicate' | 'unknown_user' | 'unknown_ad_unit';
+export type GrantStatus =
+  | 'granted'
+  | 'duplicate'
+  | 'unknown_user'
+  | 'unknown_ad_unit'
+  | 'unknown_ticket';
 
 export interface GrantResult {
   status: GrantStatus;
@@ -25,6 +31,51 @@ export class RewardsService {
     private readonly verifier: AdmobSsvVerifier,
     private readonly config: ConfigService,
   ) {}
+
+  private installation(token?: string) {
+    if (!token || !/^Installation [a-f0-9]{64}$/.test(token))
+      throw new UnauthorizedException('Missing installation credential');
+    return createHash('sha256').update(token).digest('hex');
+  }
+
+  async guestAvailability(token?: string) {
+    const installation = this.installation(token);
+    const day = new Date(new Date().toISOString().slice(0, 10));
+    const used = await this.prisma.baitOperation.count({ where: { installation, day } });
+    return { slots: Math.max(0, 3 - used) };
+  }
+
+  async guestTicket(token: string, key: string, session: string, milestone: number) {
+    const installation = this.installation(token);
+    if (milestone % 5) throw new ConflictException('No offer available');
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${installation},0))`;
+      const day = new Date(new Date().toISOString().slice(0, 10));
+      const prior = await tx.baitOperation.findUnique({ where: { id: key } });
+      if (
+        prior?.installation === installation &&
+        prior.session === session &&
+        prior.milestone === milestone
+      )
+        return { ticket: key };
+      if (
+        prior ||
+        (await tx.baitOperation.count({ where: { installation, day } })) >= 3 ||
+        (await tx.baitOperation.findFirst({ where: { installation, session, milestone } }))
+      )
+        throw new ConflictException('Offer already used');
+      await tx.baitOperation.create({
+        data: { id: key, kind: 'guest', installation, session, day, milestone },
+      });
+      return { ticket: key };
+    });
+  }
+
+  async guestStatus(token: string, key: string) {
+    const installation = this.installation(token);
+    const ticket = await this.prisma.baitOperation.findFirst({ where: { id: key, installation } });
+    return { granted: !!ticket?.transactionId };
+  }
 
   /**
    * Verifies an AdMob rewarded SSV callback and, if valid, credits the player
@@ -49,6 +100,41 @@ export class RewardsService {
         `AdMob SSV callback has no usable user_id/transaction_id (txn=${transactionId || 'none'})`,
       );
       return { status: 'unknown_user' };
+    }
+
+    // This rewarded unit belongs to My Little Pier. AdMob signs both player and ticket.
+    if (params.get('ad_unit') === '2697891384') {
+      const custom = params.get('custom_data') ?? '';
+      const guest = custom.startsWith('guest.');
+      const ticket = guest ? custom.slice(6) : custom;
+      if (guest && userId !== ticket) return { status: 'unknown_ticket' };
+      if (!UUID_RE.test(ticket)) return { status: 'unknown_ticket' };
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          const reserved = await tx.baitOperation.updateMany({
+            where: guest
+              ? { id: ticket, kind: 'guest', transactionId: null }
+              : { id: ticket, playerId: userId, kind: 'ad', transactionId: null },
+            data: { transactionId },
+          });
+          if (!reserved.count) {
+            const prior = await tx.baitOperation.findUnique({ where: { id: ticket } });
+            return {
+              status: prior?.transactionId === transactionId ? 'duplicate' : 'unknown_ticket',
+            };
+          }
+          if (!guest)
+            await tx.pierSave.update({
+              where: { playerId: userId },
+              data: { bonusBait: { increment: 3 } },
+            });
+          return { status: 'granted' };
+        });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')
+          return { status: 'duplicate' };
+        throw err;
+      }
     }
 
     const units = this.config.getOrThrow<string[]>('ADMOB_REWARDED_AD_UNITS');
