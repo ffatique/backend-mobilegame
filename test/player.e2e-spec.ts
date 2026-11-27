@@ -175,7 +175,60 @@ describe('Player API with PostgreSQL', () => {
     expect(history.body.items).toHaveLength(1);
     expect(history.body.items[0]).toMatchObject(payload.capture);
     const stats = await api.get('/pier/stats').set('Authorization', bearer).expect(200);
-    expect(stats.body).toEqual({ total: 1, species: 1, largest: 56, kind: 3 });
+    expect(stats.body).toEqual({ total: 1, species: 1, largest: 56, kind: 3, days: 1, album: 1 });
+  });
+
+  it('counts distinct UTC days and album variants across duplicate catches', async () => {
+    const api = request(app.getHttpServer());
+    await db.pierActivityDay.create({ data: { playerId: id, day: new Date('2020-06-05Z') } });
+    for (const [revision, rare] of [
+      [101, false],
+      [102, false],
+      [103, true],
+    ] as const)
+      await db.pierCatch.create({
+        data: { playerId: id, revision, species: 3, length: 60, grams: 900, size: 'L', rare },
+      });
+    await api.get('/pier/state').set('Authorization', bearer).expect(200);
+    const stats = await api.get('/pier/stats').set('Authorization', bearer).expect(200);
+    expect(stats.body).toMatchObject({ days: 2, species: 1, album: 2, total: 4, largest: 60 });
+  });
+
+  it('keeps wardrobe purchases and equipment on the player across retries', async () => {
+    const api = request(app.getHttpServer());
+    const change = (item: string, action: string) =>
+      api.post('/pier/wardrobe').set('Authorization', bearer).send({ item, action });
+    await api.post('/pier/wardrobe').send({ item: 'hat', action: 'buy' }).expect(401);
+    await change('unknown', 'buy').expect(400);
+    await change('hat', 'equip').expect(409);
+    await db.user.update({ where: { id }, data: { gems: 12 } });
+    await Promise.all([
+      change('overalls', 'buy').expect(201),
+      change('overalls', 'buy').expect(201),
+    ]);
+    expect((await change('overalls', 'equip').expect(201)).body).toMatchObject({
+      gems: 7,
+      outfit: 'overalls',
+      owned: ['overalls'],
+    });
+    expect((await change('hat', 'buy').expect(201)).body.gems).toBe(3);
+    await change('hat', 'equip').expect(201);
+    await db.user.update({ where: { id }, data: { gems: 2 } });
+    await change('shirt', 'buy').expect(409);
+    await db.user.update({ where: { id }, data: { gems: 3 } });
+    expect((await change('shirt', 'buy').expect(201)).body.gems).toBe(0);
+    await change('shirt', 'equip').expect(201);
+    await change('overalls', 'remove').expect(201);
+    expect((await api.get('/pier/state').set('Authorization', bearer)).body).toMatchObject({
+      gems: 0,
+      outfit: 'shirt',
+      hat: 'hat',
+      owned: ['overalls', 'hat', 'shirt'],
+    });
+    expect((await change('hat', 'remove').expect(201)).body).toMatchObject({
+      outfit: 'shirt',
+      hat: null,
+    });
   });
 
   it('rotates the session and revokes it on logout', async () => {

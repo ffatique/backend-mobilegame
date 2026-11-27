@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import type { SaveDto } from './pier.dto';
+import { type SaveDto, type WardrobeDto, wardrobePrices } from './pier.dto';
 
 const publicFields = { id: true, name: true, avatar: true } as const;
 
@@ -19,6 +19,8 @@ export class PierService {
     await tx.$queryRaw`SELECT "playerId" FROM pier_saves WHERE "playerId"=${id}::uuid FOR UPDATE`;
     await tx.$executeRaw`UPDATE pier_saves SET bait=12, day=(statement_timestamp() AT TIME ZONE 'UTC')::date
       WHERE "playerId"=${id}::uuid AND day < (statement_timestamp() AT TIME ZONE 'UTC')::date`;
+    await tx.$executeRaw`INSERT INTO pier_activity_days ("playerId",day)
+      VALUES (${id}::uuid,(statement_timestamp() AT TIME ZONE 'UTC')::date) ON CONFLICT DO NOTHING`;
     return tx.pierSave.findUniqueOrThrow({ where: { playerId: id } });
   }
 
@@ -131,6 +133,38 @@ export class PierService {
     });
   }
 
+  async wardrobe(id: string, { item, action }: WardrobeDto) {
+    return this.db.$transaction(async (tx) => {
+      const save = await this.load(tx, id);
+      const slot = item === 'hat' ? 'hat' : 'outfit';
+      if (action === 'buy' && !save.owned.includes(item)) {
+        const gems = wardrobePrices[item];
+        const paid = await tx.user.updateMany({
+          where: { id, gems: { gte: gems } },
+          data: { gems: { decrement: gems } },
+        });
+        if (!paid.count) throw new ConflictException('Not enough gems');
+        await tx.pierSave.update({
+          where: { playerId: id },
+          data: { owned: { push: item } },
+        });
+      } else if (action !== 'buy') {
+        if (!save.owned.includes(item)) throw new ConflictException('Item not owned');
+        if (action === 'equip' || save[slot] === item)
+          await tx.pierSave.update({
+            where: { playerId: id },
+            data: { [slot]: action === 'equip' ? item : null },
+          });
+      }
+      const wardrobe = await tx.pierSave.findUniqueOrThrow({
+        where: { playerId: id },
+        select: { owned: true, outfit: true, hat: true },
+      });
+      const wallet = await tx.user.findUniqueOrThrow({ where: { id }, select: { gems: true } });
+      return { ...wardrobe, ...wallet };
+    });
+  }
+
   async refill() {
     const updated = await this.db
       .$executeRaw`UPDATE pier_saves SET bait=12, day=(statement_timestamp() AT TIME ZONE 'UTC')::date
@@ -157,9 +191,10 @@ export class PierService {
     };
   }
   async stats(id: string) {
-    const [total, species, biggest] = await Promise.all([
+    const [total, variants, days, biggest] = await Promise.all([
       this.db.pierCatch.count({ where: { playerId: id } }),
-      this.db.pierCatch.groupBy({ by: ['species'], where: { playerId: id } }),
+      this.db.pierCatch.groupBy({ by: ['species', 'rare'], where: { playerId: id } }),
+      this.db.pierActivityDay.count({ where: { playerId: id } }),
       this.db.pierCatch.findFirst({
         where: { playerId: id },
         orderBy: [{ length: 'desc' }, { grams: 'desc' }],
@@ -168,7 +203,9 @@ export class PierService {
     ]);
     return {
       total,
-      species: species.length,
+      species: new Set(variants.map((v) => v.species)).size,
+      album: variants.length,
+      days,
       largest: biggest?.length ?? 0,
       kind: biggest?.species ?? 0,
     };

@@ -38,3 +38,9 @@ export class BaitPurchaseDto {
 export class AdTicketDto extends BaitPurchaseDto {
   @IsInt() @Min(5) @Max(2147483647) milestone!: number;
 }
+
+export const wardrobePrices = { overalls: 5, shirt: 3, hat: 4 } as const;
+export class WardrobeDto {
+  @IsIn(Object.keys(wardrobePrices)) item!: keyof typeof wardrobePrices;
+  @IsIn(['buy', 'equip', 'remove']) action!: 'buy' | 'equip' | 'remove';
+}

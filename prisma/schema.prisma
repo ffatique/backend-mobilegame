@@ -20,6 +20,7 @@ model User {
   createdAt      DateTime         @default(now())
   avatar         String?
   baitOperations BaitOperation[]
+  activityDays   PierActivityDay[]
   pierSave       PierSave?
   catches        PierCatch[]
   firstFriends   Friendship[]     @relation("first")
@@ -139,7 +140,19 @@ model IapPurchase {
   @@map("iap_purchases")
 }
 
+model PierActivityDay {
+  playerId String   @db.Uuid
+  day      DateTime @db.Date
+  player   User     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@id([playerId, day])
+  @@map("pier_activity_days")
+}
+
 model PierSave {
+  owned     String[] @default([])
+  outfit    String?
+  hat       String?
   playerId  String   @id @db.Uuid
   player    User     @relation(fields: [playerId], references: [id], onDelete: Cascade)
   snapshot  String   @default("") @db.Text
