@@ -17,7 +17,7 @@ import { timingSafeEqual, createHash } from 'node:crypto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PierService } from './pier.service';
-import { SaveDto, FriendDto, BaitPurchaseDto, AdTicketDto } from './pier.dto';
+import { SaveDto, FriendDto, BaitPurchaseDto, AdTicketDto, WardrobeDto } from './pier.dto';
 
 @Controller('pier')
 @UseGuards(JwtAuthGuard)
@@ -28,6 +28,9 @@ export class PierController {
   }
   @Post('state') save(@CurrentUser() u: { id: string }, @Body() dto: SaveDto) {
     return this.pier.save(u.id, dto);
+  }
+  @Post('wardrobe') wardrobe(@CurrentUser() u: { id: string }, @Body() dto: WardrobeDto) {
+    return this.pier.wardrobe(u.id, dto);
   }
   @Post('bait/purchase') buy(@CurrentUser() u: { id: string }, @Body() dto: BaitPurchaseDto) {
     return this.pier.baitOperation(u.id, dto.key, 'purchase');

@@ -88,8 +88,9 @@ O cliente Android usa `https://api.mylittlepier.com`. As rotas `/pier` exigem o 
 | Rota | Operação |
 | --- | --- |
 | `GET /pier/state` | Devolve o save, a revisão, as iscas do dia UTC e o perfil. |
+| `POST /pier/wardrobe` | Recebe `item` e `action` (buy, equip, remove). Macacão (overalls), camiseta (shirt) e chapéu (hat) custam 5, 3 e 4 gemas. A resposta traz as peças compradas, a combinação vestida e o saldo. Uma repetição da compra devolve o estado atual. |
 | `POST /pier/state` | Grava `snapshot`, revisão esperada, UUID da operação, gasto de zero ou uma isca e captura opcional. O bloqueio de linha serializa o gasto e a reposição. Uma revisão antiga retorna 409. |
-| `GET /pier/stats`, `GET /pier/history?before=N` | Totais e maior peixe, ou até 50 capturas da conta por página. Cada captura tem a revisão da gravação como chave e conserva a data da pescaria mesmo se o envio atrasar. |
+| `GET /pier/stats`, `GET /pier/history?before=N` | Dias distintos de atividade em UTC, total de capturas, espécies, fotos distintas do álbum e recorde de comprimento, ou até 50 capturas da conta por página. Cada captura tem a revisão da gravação como chave e conserva a data da pescaria mesmo se o envio atrasar. |
 | `GET /pier/players?q=Ana` | Busca por prefixo de 2 a 32 caracteres, até 30 resultados com ID, nome e avatar. |
 | `GET /pier/friends` | Amizades e pedidos de entrada e saída da própria conta. |
 | `POST /pier/friends/:id` | Recebe `action` com `send`, `accept` ou `decline`. Só o destinatário pode decidir sobre um pedido. |
