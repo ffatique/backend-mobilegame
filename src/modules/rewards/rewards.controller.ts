@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, HttpStatus, ParseIntPipe, ParseUUIDPipe, Param, Post, Req } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { IsUUID } from 'class-validator';
@@ -26,6 +26,13 @@ export class RewardsController {
 
   @Get('guest/availability') availability(@Headers('authorization') token?: string) {
     return this.rewards.guestAvailability(token);
+  }
+  @Get('guest/offer/:session/:milestone') async guestOffer(
+    @Headers('authorization') token: string,
+    @Param('session', ParseUUIDPipe) session: string,
+    @Param('milestone', ParseIntPipe) milestone: number,
+  ) {
+    return this.rewards.guestOffer(token, session, milestone);
   }
   @Post('guest/ad') reserve(@Headers('authorization') token: string, @Body() dto: GuestTicketDto) {
     return this.rewards.guestTicket(token, dto.key, dto.session, dto.milestone);

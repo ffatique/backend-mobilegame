@@ -1,6 +1,6 @@
 {
   "name": "backend-mobilegame",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "API de jogadores e loja do My Little Pier.",
   "private": true,
   "license": "UNLICENSED",

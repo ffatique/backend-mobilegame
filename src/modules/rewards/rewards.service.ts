@@ -45,6 +45,15 @@ export class RewardsService {
     return { slots: Math.max(0, 3 - used) };
   }
 
+  async guestOffer(token: string, session: string, milestone: number) {
+    const { slots } = await this.guestAvailability(token);
+    if (!slots || milestone < 5 || milestone > 2147483647 || milestone % 5) return { milestone: 0 };
+    const used = await this.prisma.baitOperation.findFirst({
+      where: { installation: this.installation(token), session, milestone },
+    });
+    return { milestone: used ? 0 : milestone };
+  }
+
   async guestTicket(token: string, key: string, session: string, milestone: number) {
     const installation = this.installation(token);
     if (milestone % 5) throw new ConflictException('No offer available');

@@ -47,7 +47,7 @@ O jogo atual ganha moedas no aparelho. Para ativar compras online, falta integra
 
 ## Compras nas lojas e anúncios
 
-O catálogo público em `GET /iap/google/catalog` devolve os IDs e quantidades habilitados. O preço localizado vem da Play no aparelho. Cadastre os produtos reais do jogo em `GemPackDefinition` pelo Prisma Studio, um registro por plataforma (`APPLE` ou `GOOGLE`), com o `productId` da loja, a quantidade de `gems` e `isEnabled`. O catálogo começa vazio. Configure pacotes consumíveis de uma unidade por transação. As gemas ficam em saldo separado das moedas da bancada. Por padrão, os recibos de sandbox ficam registrados com crédito zero. Use `IAP_CREDIT_SANDBOX=true` no ambiente de testes para exercitar o crédito.
+O catálogo público em `GET /iap/google/catalog` devolve os IDs e quantidades habilitados. O preço localizado vem da Play no aparelho. Cadastre os produtos reais do jogo em `GemPackDefinition` pelo Prisma Studio, um registro por plataforma (`APPLE` ou `GOOGLE`), com o `productId` da loja, a quantidade de `gems` e `isEnabled`. Os três pacotes Android usam os sufixos `pack.10g`, `pack.60g` e `pack.300g` sob `com.kumagames.mylittlepier`. Configure pacotes consumíveis de uma unidade por transação. As gemas ficam em saldo separado das moedas da bancada. Por padrão, os recibos de sandbox ficam registrados com crédito zero. Use `IAP_CREDIT_SANDBOX=true` no ambiente de testes para exercitar o crédito.
 
 | Rota | Quem envia | Uso |
 | --- | --- | --- |

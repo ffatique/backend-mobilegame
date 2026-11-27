@@ -69,7 +69,11 @@ describe('Bait economy with PostgreSQL', () => {
       });
       if (count % 5 || count === 20) continue;
       const key = randomUUID();
+      const offer = () =>
+        request(app.getHttpServer()).get('/pier/bait/offer').set('Authorization', auth);
+      expect((await offer()).body.milestone).toBe(count);
       await post('bait/ad', { key, milestone: count }).expect(201);
+      expect((await offer()).body.milestone).toBe(0);
       await post('bait/ad', { key: randomUUID(), milestone: count }).expect(409);
       const callback = (ticket: string, user: string) =>
         request(app.getHttpServer())
@@ -114,7 +118,11 @@ describe('Bait economy with PostgreSQL', () => {
     await available('invalid').expect(401);
     const session = randomUUID(),
       key = randomUUID();
+    const offer = () =>
+      request(app.getHttpServer()).get('/rewards/guest/offer/' + session + '/5').set('Authorization', install);
+    expect((await offer()).body.milestone).toBe(5);
     await enroll(key, session, 5).expect(201);
+    expect((await offer()).body.milestone).toBe(0);
     await enroll(key, session, 5).expect(201);
     await enroll(randomUUID(), session, 5).expect(409);
     expect((await check(install, key)).body.granted).toBe(false);
