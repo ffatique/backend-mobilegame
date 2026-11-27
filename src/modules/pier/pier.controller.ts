@@ -1,5 +1,6 @@
 import {
   Body,
+  HttpException,
   Controller,
   DefaultValuePipe,
   Get,
@@ -17,7 +18,15 @@ import { timingSafeEqual, createHash } from 'node:crypto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PierService } from './pier.service';
-import { SaveDto, FriendDto, BaitPurchaseDto, AdTicketDto, WardrobeDto } from './pier.dto';
+import {
+  CastDto,
+  FinishDto,
+  ActionDto,
+  FriendDto,
+  BaitPurchaseDto,
+  AdTicketDto,
+  WardrobeDto,
+} from './pier.dto';
 
 @Controller('pier')
 @UseGuards(JwtAuthGuard)
@@ -26,8 +35,20 @@ export class PierController {
   @Get('state') state(@CurrentUser() u: { id: string }) {
     return this.pier.state(u.id);
   }
-  @Post('state') save(@CurrentUser() u: { id: string }, @Body() dto: SaveDto) {
-    return this.pier.save(u.id, dto);
+  @Post('state') legacySave() {
+    throw new HttpException('Update My Little Pier to continue account fishing', 426);
+  }
+  @Get('school') school(@CurrentUser() u: { id: string }) {
+    return this.pier.school(u.id);
+  }
+  @Post('cast') cast(@CurrentUser() u: { id: string }, @Body() dto: CastDto) {
+    return this.pier.cast(u.id, dto);
+  }
+  @Post('finish') finish(@CurrentUser() u: { id: string }, @Body() dto: FinishDto) {
+    return this.pier.finish(u.id, dto);
+  }
+  @Post('action') action(@CurrentUser() u: { id: string }, @Body() dto: ActionDto) {
+    return this.pier.action(u.id, dto);
   }
   @Post('wardrobe') wardrobe(@CurrentUser() u: { id: string }, @Body() dto: WardrobeDto) {
     return this.pier.wardrobe(u.id, dto);

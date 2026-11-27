@@ -87,6 +87,16 @@ export class IapService {
     return environment === IapEnvironment.SANDBOX && !credit ? 0 : pack.gems;
   }
 
+  async googleCatalog() {
+    return {
+      items: await this.prisma.gemPackDefinition.findMany({
+        where: { platform: 'GOOGLE', isEnabled: true, gems: { gt: 0 } },
+        select: { productId: true, gems: true },
+        orderBy: { gems: 'asc' },
+      }),
+    };
+  }
+
   async verifyApple(userId: string, transactionId: string): Promise<VerifyPurchaseResponse> {
     const { transaction, environment } = await this.apple.getVerifiedTransaction(transactionId);
     if (!sameId(transaction.appAccountToken, userId)) {
@@ -422,6 +432,8 @@ function googleRecord(
   purchaseToken: string,
   purchase: GoogleProductPurchase,
 ): PurchaseRecord {
+  if (purchase.productId && purchase.productId !== productId)
+    throw new BadRequestException('Unexpected Google Play product');
   if (purchase.quantity != null && purchase.quantity !== 1)
     throw new BadRequestException('Expected one consumable per transaction');
   return {

@@ -1,4 +1,13 @@
-import { Body, Controller, Headers, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Get,
+  Controller,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { IapEnvironment } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -24,6 +33,11 @@ import { IapService } from './iap.service';
 @Controller('iap')
 export class IapController {
   constructor(private readonly iap: IapService) {}
+
+  @Get('google/catalog')
+  catalog() {
+    return this.iap.googleCatalog();
+  }
 
   @Post('apple/verify')
   @HttpCode(HttpStatus.OK)

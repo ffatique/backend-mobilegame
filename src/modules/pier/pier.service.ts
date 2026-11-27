@@ -2,12 +2,36 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { type SaveDto, type WardrobeDto, wardrobePrices } from './pier.dto';
+import {
+  type CastDto,
+  type FinishDto,
+  type ActionDto,
+  type WardrobeDto,
+  wardrobePrices,
+} from './pier.dto';
 
+import {
+  FishingProgress,
+  nightAt,
+  specimen,
+  type Specimen,
+  type Outcome,
+} from './fishing-progress';
+import { randomInt } from 'node:crypto';
+type Attempt = Omit<Specimen, 'id'> & {
+  id: string;
+  fishId: string | null;
+  canLand: boolean;
+  outcome: Outcome | null;
+  finishKey: string | null;
+  passAvailable: boolean;
+  newRecord: boolean;
+};
 const publicFields = { id: true, name: true, avatar: true } as const;
 
 @Injectable()
@@ -44,36 +68,215 @@ export class PierService {
     });
   }
 
-  async save(id: string, dto: SaveDto) {
+  private async putFish(tx: Prisma.TransactionClient, player: string, fish: Specimen[]) {
+    const values = fish.map(
+      (f) =>
+        Prisma.sql`(${player}::uuid,${f.id}::uuid,${f.station},${f.species},${f.slot},${f.rare},${f.percentile},${f.length},${f.grams})`,
+    );
+    await tx.$executeRaw`INSERT INTO pier_schools ("playerId",id,station,species,slot,rare,percentile,length,grams)
+      VALUES ${Prisma.join(values)}`;
+  }
+
+  private async expire(tx: Prisma.TransactionClient, id: string) {
+    await tx.$executeRaw`UPDATE pier_attempts SET outcome='expired',"closedAt"=now()
+      WHERE "playerId"=${id}::uuid AND outcome IS NULL AND "openedAt" <= now()-interval '3 minutes'`;
+  }
+
+  async school(id: string) {
+    return this.db.$transaction(async (tx) => {
+      const save = await this.load(tx, id),
+        progress = new FishingProgress(save.snapshot);
+      await this.expire(tx, id);
+      let rows = await tx.$queryRaw<
+        Specimen[]
+      >`SELECT * FROM pier_schools WHERE "playerId"=${id}::uuid ORDER BY station,species,slot`;
+      if (!rows.length) {
+        rows = [];
+        for (const [station, species, residents, visitors] of [
+          [0, 0, 4, 0],
+          [0, 2, 1, 2],
+          [1, 1, 3, 2],
+          [1, 3, 1, 0],
+          [2, 4, 3, 2],
+          [2, 5, 1, 0],
+        ]) {
+          const count = residents + (visitors && randomInt(2) ? visitors : 0);
+          for (let slot = 0; slot < count; slot++) {
+            const fish = specimen(species, slot, station);
+            rows.push(fish);
+          }
+        }
+        await this.putFish(tx, id, rows);
+      }
+      const now = new Date(),
+        night = nightAt(now);
+      const active = await tx.$queryRaw<
+        { id: string }[]
+      >`SELECT id FROM pier_attempts WHERE "playerId"=${id}::uuid AND outcome IS NULL`;
+      return {
+        night,
+        serverTime: now.toISOString(),
+        revision: save.revision,
+        active: active[0]?.id,
+        items: rows.filter(
+          (f) => progress.unlocked(f.station) && this.available(f, progress, night),
+        ),
+      };
+    });
+  }
+
+  private available(fish: Specimen, p: FishingProgress, night: boolean) {
+    if (fish.species === 3 || fish.species === 5)
+      return (fish.species === 5) === night && p.pass(fish.station) >= 3;
+    return true;
+  }
+
+  async cast(id: string, dto: CastDto) {
+    return this.db
+      .$transaction(async (tx) => {
+        const state = await this.load(tx, id),
+          p = new FishingProgress(state.snapshot);
+        await this.expire(tx, id);
+        const [prior] = await tx.$queryRaw<
+          Attempt[]
+        >`SELECT * FROM pier_attempts WHERE "playerId"=${id}::uuid AND id=${dto.key}::uuid`;
+        if (prior) {
+          if (prior.station !== dto.station || prior.fishId !== (dto.fishId ?? null))
+            throw new ConflictException('Cast key already used');
+          Logger.log({ event: 'pier.cast.replay', player: id, attempt: prior.id });
+          return { id: prior.id, outcome: prior.outcome, bait: state.bait + state.bonusBait };
+        }
+        const [open] = await tx.$queryRaw<
+          Attempt[]
+        >`SELECT id FROM pier_attempts WHERE "playerId"=${id}::uuid AND outcome IS NULL`;
+        if (open || !p.unlocked(dto.station) || (!state.bait && !state.bonusBait))
+          throw new ConflictException('Cast unavailable');
+        let fish: Specimen | undefined;
+        const night = nightAt(new Date());
+        if (dto.fishId) {
+          [fish] = await tx.$queryRaw<
+            Specimen[]
+          >`SELECT * FROM pier_schools WHERE "playerId"=${id}::uuid AND id=${dto.fishId}::uuid AND station=${dto.station}`;
+          if (!fish || !this.available(fish, p, night))
+            throw new ConflictException('Reload school');
+        }
+        if (!p.hasRoom(fish?.percentile ?? 0)) throw new ConflictException('Basket full');
+        await tx.$executeRaw`INSERT INTO pier_attempts ("playerId",id,station,"fishId",species,rare,percentile,length,grams,"passAvailable")
+        VALUES (${id}::uuid,${dto.key}::uuid,${dto.station},${fish?.id ?? null}::uuid,${fish?.species ?? null},${fish?.rare ?? null},
+        ${fish?.percentile ?? null},${fish?.length ?? null},${fish?.grams ?? null},${dto.station === 1 ? !night : night})`;
+        await tx.pierSave.update({
+          where: { playerId: id },
+          data: state.bait ? { bait: { decrement: 1 } } : { bonusBait: { decrement: 1 } },
+        });
+        return { id: dto.key, outcome: null, bait: state.bait + state.bonusBait - 1, paid: true };
+      })
+      .then((result) => {
+        if ('paid' in result)
+          Logger.log({ event: 'pier.cast.paid', player: id, attempt: dto.key, fish: dto.fishId });
+        return result;
+      });
+  }
+
+  async finish(id: string, dto: FinishDto) {
+    return this.db
+      .$transaction(async (tx) => {
+        const state = await this.load(tx, id),
+          p = new FishingProgress(state.snapshot);
+        await this.expire(tx, id);
+        const [a] = await tx.$queryRaw<
+          Attempt[]
+        >`SELECT *, clock_timestamp() >= "openedAt" + interval '3.2 seconds' AS "canLand" FROM pier_attempts WHERE "playerId"=${id}::uuid AND id=${dto.attempt}::uuid`;
+        if (!a) throw new NotFoundException();
+        const outcome: Outcome = dto.outcome;
+        let record = false;
+        if (a.outcome) {
+          if (a.outcome === 'expired') return { outcome: a.outcome, newRecord: false, offer: 0 };
+          if (a.finishKey !== dto.key || a.outcome !== outcome) {
+            Logger.warn({ event: 'pier.finish.duplicate_rejected', player: id, attempt: a.id });
+            throw new ConflictException('Attempt already closed');
+          }
+          Logger.log({ event: 'pier.finish.replay', player: id, attempt: a.id });
+          return {
+            outcome: a.outcome,
+            newRecord: a.newRecord,
+            offer: a.outcome === 'caught' ? await this.adOffer(tx, id, state.day) : 0,
+          };
+        }
+        const now = new Date();
+        if (outcome === 'caught') {
+          if (!a.fishId || !a.canLand || !p.hasRoom(a.percentile))
+            throw new ConflictException('Invalid catch');
+          const [f] = await tx.$queryRaw<
+            Specimen[]
+          >`SELECT * FROM pier_schools WHERE "playerId"=${id}::uuid AND id=${a.fishId}::uuid`;
+          if (!f) throw new ConflictException('Specimen gone');
+          const best = await tx.pierCatch.aggregate({
+            where: { playerId: id, species: f.species },
+            _max: { length: true },
+          });
+          record = f.length > (best._max.length ?? 0);
+          p.catch(f, now);
+          await tx.pierCatch.create({
+            data: {
+              playerId: id,
+              revision: state.revision + 1,
+              species: f.species,
+              rare: f.rare,
+              length: f.length,
+              grams: f.grams,
+              size: ['S', 'M', 'L', 'XL'][Math.floor(f.percentile / 250)],
+            },
+          });
+          await tx.$executeRaw`DELETE FROM pier_schools WHERE id=${f.id}::uuid`;
+          await this.putFish(tx, id, [specimen(f.species, f.slot, f.station)]);
+        }
+        p.advance(
+          a.station,
+          outcome === 'caught',
+          a.species === 3 || a.species === 5,
+          a.passAvailable,
+        );
+        await tx.pierSave.update({
+          where: { playerId: id },
+          data: { snapshot: p.encode(), revision: { increment: 1 }, mutation: dto.key },
+        });
+        await tx.$executeRaw`UPDATE pier_attempts SET outcome=${outcome},"closedAt"=now(),"finishKey"=${dto.key}::uuid,"newRecord"=${record}
+        WHERE "playerId"=${id}::uuid AND id=${a.id}::uuid`;
+        return {
+          outcome,
+          newRecord: record,
+          offer: outcome === 'caught' ? await this.adOffer(tx, id, state.day) : 0,
+          closed: true,
+        };
+      })
+      .then((result) => {
+        if ('closed' in result)
+          Logger.log({
+            event: 'pier.finish',
+            player: id,
+            attempt: dto.attempt,
+            outcome: result.outcome,
+          });
+        return result;
+      });
+  }
+
+  async action(id: string, dto: ActionDto) {
     return this.db.$transaction(async (tx) => {
       const state = await this.load(tx, id);
-      if (state.mutation === dto.mutation) {
-        const caught = await tx.pierCatch.findUnique({
-          where: { playerId_revision: { playerId: id, revision: state.revision } },
-        });
-        return {
-          ...state,
-          bait: state.bait + state.bonusBait,
-          offer: caught ? await this.adOffer(tx, id, state.day) : 0,
-        };
-      }
-      if (state.revision !== dto.revision || state.bait + state.bonusBait < dto.spend)
-        throw new ConflictException('Reload progress');
-      const revision = state.revision + 1;
-      if (dto.capture)
-        await tx.pierCatch.create({ data: { playerId: id, revision, ...dto.capture } });
-      const saved = await tx.pierSave.update({
+      if (state.mutation === dto.key) return { revision: state.revision };
+      await this.expire(tx, id);
+      const [active] = await tx.$queryRaw<
+        Attempt[]
+      >`SELECT id FROM pier_attempts WHERE "playerId"=${id}::uuid AND outcome IS NULL`;
+      if (active || state.revision !== dto.revision) throw new ConflictException('Reload progress');
+      const p = new FishingProgress(state.snapshot);
+      p.act(dto.action, new Date());
+      return tx.pierSave.update({
         where: { playerId: id },
-        data: {
-          revision,
-          snapshot: dto.snapshot,
-          mutation: dto.mutation,
-          bait: { decrement: Math.min(state.bait, dto.spend) },
-          bonusBait: { decrement: Math.max(0, dto.spend - state.bait) },
-        },
+        data: { snapshot: p.encode(), mutation: dto.key, revision: { increment: 1 } },
+        select: { revision: true },
       });
-      const offer = dto.capture ? await this.adOffer(tx, id, state.day) : 0;
-      return { ...saved, bait: saved.bait + saved.bonusBait, offer };
     });
   }
 
@@ -166,10 +369,37 @@ export class PierService {
   }
 
   async refill() {
-    const updated = await this.db
-      .$executeRaw`UPDATE pier_saves SET bait=12, day=(statement_timestamp() AT TIME ZONE 'UTC')::date
+    const start = Date.now();
+    try {
+      return await this.db
+        .$transaction(async (tx) => {
+          const updated =
+            await tx.$executeRaw`UPDATE pier_saves SET bait=12, day=(statement_timestamp() AT TIME ZONE 'UTC')::date
       WHERE day < (statement_timestamp() AT TIME ZONE 'UTC')::date`;
-    return { updated };
+          const duration = Date.now() - start;
+          await tx.$executeRaw`INSERT INTO pier_refills (accounts,duration_ms) VALUES (${updated},${duration})`;
+          return { updated };
+        })
+        .then((result) => {
+          Logger.log({
+            event: 'bait.refill',
+            utc: new Date().toISOString(),
+            result: 'success',
+            accounts: result.updated,
+            durationMs: Date.now() - start,
+          });
+          return result;
+        });
+    } catch (error) {
+      Logger.error({
+        event: 'bait.refill',
+        utc: new Date().toISOString(),
+        result: 'failure',
+        accounts: 0,
+        durationMs: Date.now() - start,
+      });
+      throw error;
+    }
   }
 
   async history(id: string, before: number) {

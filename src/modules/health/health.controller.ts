@@ -1,4 +1,5 @@
-import { Controller, Get, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException, HttpCode, HttpStatus } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import { SkipThrottle } from '@nestjs/throttler';
 
 /**
@@ -10,6 +11,15 @@ import { SkipThrottle } from '@nestjs/throttler';
 @SkipThrottle()
 @Controller()
 export class HealthController {
+  constructor(private readonly db: PrismaService) {}
+  @Get('health/bait')
+  async refillHealth() {
+    const [row] = await this.db.$queryRaw<{ ok: boolean }[]>`SELECT EXISTS (
+      SELECT 1 FROM pier_refills WHERE ran_at >= date_trunc('day', (now() AT TIME ZONE 'UTC')-interval '2 hours') AT TIME ZONE 'UTC'
+    ) AS ok`;
+    if (!row.ok) throw new ServiceUnavailableException('Daily refill missing');
+    return { status: 'ok' };
+  }
   @Get()
   @HttpCode(HttpStatus.OK)
   root(): { status: 'ok' } {

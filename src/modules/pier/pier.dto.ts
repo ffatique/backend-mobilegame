@@ -1,33 +1,4 @@
-import { Type } from 'class-transformer';
-import {
-  IsBoolean,
-  IsIn,
-  IsInt,
-  IsISO8601,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Max,
-  MaxLength,
-  Min,
-  MinLength,
-  ValidateNested,
-} from 'class-validator';
-class CaptureDto {
-  @IsInt() @Min(0) @Max(5) species!: number;
-  @IsBoolean() rare!: boolean;
-  @IsInt() @Min(1) @Max(125) length!: number;
-  @IsInt() @Min(1) @Max(12500) grams!: number;
-  @IsIn(['S', 'M', 'L', 'XL']) size!: string;
-  @IsOptional() @IsISO8601({ strict: true }) caughtAt?: string;
-}
-export class SaveDto {
-  @IsUUID() mutation!: string;
-  @IsInt() @Min(0) @Max(2147483646) revision!: number;
-  @IsInt() @Min(0) @Max(1) spend!: number;
-  @IsString() @MinLength(1) @MaxLength(16000) snapshot!: string;
-  @IsOptional() @ValidateNested() @Type(() => CaptureDto) capture?: CaptureDto;
-}
+import { IsIn, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
 export class FriendDto {
   @IsIn(['send', 'accept', 'decline']) action!: string;
 }
@@ -43,4 +14,34 @@ export const wardrobePrices = { overalls: 5, shirt: 3, hat: 4 } as const;
 export class WardrobeDto {
   @IsIn(Object.keys(wardrobePrices)) item!: keyof typeof wardrobePrices;
   @IsIn(['buy', 'equip', 'remove']) action!: 'buy' | 'equip' | 'remove';
+}
+
+export class CastDto extends BaitPurchaseDto {
+  @IsInt() @Min(0) @Max(2) station!: number;
+  @IsOptional() @IsUUID() fishId?: string;
+}
+export class FinishDto extends BaitPurchaseDto {
+  @IsUUID() attempt!: string;
+  @IsIn(['caught', 'escaped', 'empty', 'abandoned']) outcome!:
+    | 'caught'
+    | 'escaped'
+    | 'empty'
+    | 'abandoned';
+}
+export class ActionDto extends BaitPurchaseDto {
+  @IsInt() @Min(0) revision!: number;
+  @IsIn([
+    'sell',
+    'basket',
+    'rocks',
+    'point',
+    'rod',
+    'station0',
+    'station1',
+    'station2',
+    'daily',
+    'read',
+    'deliver',
+  ])
+  action!: string;
 }
