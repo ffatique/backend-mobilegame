@@ -47,11 +47,11 @@ export class RewardsService {
 
   async guestOffer(token: string, session: string, milestone: number) {
     const { slots } = await this.guestAvailability(token);
-    if (!slots || milestone < 5 || milestone > 2147483647 || milestone % 5) return { milestone: 0 };
+    if (!slots || milestone < 5 || milestone > 2147483647 || milestone % 5) return { milestone: 0, slots };
     const used = await this.prisma.baitOperation.findFirst({
       where: { installation: this.installation(token), session, milestone },
     });
-    return { milestone: used ? 0 : milestone };
+    return { milestone: used ? 0 : milestone, slots };
   }
 
   async guestTicket(token: string, key: string, session: string, milestone: number) {
@@ -83,7 +83,7 @@ export class RewardsService {
   async guestStatus(token: string, key: string) {
     const installation = this.installation(token);
     const ticket = await this.prisma.baitOperation.findFirst({ where: { id: key, installation } });
-    return { granted: !!ticket?.transactionId };
+    return { granted: !!ticket?.transactionId, baitGranted: ticket?.baitGranted ?? 0 };
   }
 
   /**
@@ -124,7 +124,7 @@ export class RewardsService {
             where: guest
               ? { id: ticket, kind: 'guest', transactionId: null }
               : { id: ticket, playerId: userId, kind: 'ad', transactionId: null },
-            data: { transactionId },
+            data: { transactionId, baitGranted: 5 },
           });
           if (!reserved.count) {
             const prior = await tx.baitOperation.findUnique({ where: { id: ticket } });
@@ -135,7 +135,7 @@ export class RewardsService {
           if (!guest)
             await tx.pierSave.update({
               where: { playerId: userId },
-              data: { bonusBait: { increment: 3 } },
+              data: { bonusBait: { increment: 5 } },
             });
           return { status: 'granted' };
         });

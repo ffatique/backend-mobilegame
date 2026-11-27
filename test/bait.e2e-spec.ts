@@ -67,6 +67,7 @@ describe('Bait economy with PostgreSQL', () => {
           rare: false,
         },
       });
+      if (count === 4) expect((await request(app.getHttpServer()).get('/pier/bait/offer').set('Authorization', auth)).body.milestone).toBe(0);
       if (count % 5 || count === 20) continue;
       const key = randomUUID();
       const offer = () =>
@@ -87,18 +88,22 @@ describe('Bait economy with PostgreSQL', () => {
           .expect(200);
       expect((await callback(key, randomUUID())).body.status).toBe('unknown_ticket');
       expect((await callback(randomUUID(), id)).body.status).toBe('unknown_ticket');
+      expect((await post('bait/status', { key })).body).toEqual({ granted: false, baitGranted: 0 });
+      const before = (await state()).bonusBait;
       const receipts = await Promise.all([callback(key, id), callback(key, id)]);
+      expect((await state()).bonusBait).toBe(before + 5);
+      expect((await post('bait/status', { key })).body).toEqual({ granted: true, baitGranted: 5 });
       expect(receipts.map((x) => x.body.status).sort()).toEqual(['duplicate', 'granted']);
     }
     await post('bait/ad', { key: randomUUID(), milestone: 20 }).expect(409);
-    expect(await state()).toMatchObject({ bait: 24, adSlots: 0 });
+    expect(await state()).toMatchObject({ bait: 30, adSlots: 0 });
     await db.baitOperation.updateMany({
       where: { playerId: id, kind: 'ad' },
       data: { day: new Date('2020-01-01') },
     });
     await post('bait/ad', { key: randomUUID(), milestone: 20 }).expect(201);
     await db.pierSave.update({ where: { playerId: id }, data: { bait: 0 } });
-    expect((await post('cast', { key: randomUUID(), station: 0 }).expect(201)).body.bait).toBe(11);
+    expect((await post('cast', { key: randomUUID(), station: 0 }).expect(201)).body.bait).toBe(17);
   });
   it('counts guest views per installation across sessions and releases only the signed receipt', async () => {
     const install = 'Installation ' + randomBytes(32).toString('hex');
@@ -137,7 +142,7 @@ describe('Bait economy with PostgreSQL', () => {
         });
     const results = await Promise.all([notify(), notify()]);
     expect(results.map((x) => x.body.status).sort()).toEqual(['duplicate', 'granted']);
-    expect((await check(install, key)).body.granted).toBe(true);
+    expect((await check(install, key)).body).toEqual({ granted: true, baitGranted: 5 });
     expect((await check(other, key)).body.granted).toBe(false);
     const slots = await Promise.all(
       Array.from({ length: 3 }, () => enroll(randomUUID(), randomUUID(), 5)),

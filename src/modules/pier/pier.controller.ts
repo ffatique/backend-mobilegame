@@ -59,6 +59,9 @@ export class PierController {
   @Post('bait/purchase') buy(@CurrentUser() u: { id: string }, @Body() dto: BaitPurchaseDto) {
     return this.pier.baitOperation(u.id, dto.key, 'purchase');
   }
+  @Post('bait/status') receipt(@CurrentUser() u: { id: string }, @Body() dto: BaitPurchaseDto) {
+    return this.pier.baitReceipt(u.id, dto.key);
+  }
   @Post('bait/ad') reserve(@CurrentUser() u: { id: string }, @Body() dto: AdTicketDto) {
     return this.pier.baitOperation(u.id, dto.key, 'ad', dto.milestone);
   }

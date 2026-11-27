@@ -139,7 +139,17 @@ export class IapService {
     if (result.status !== 'refunded' && purchase.consumptionState === GOOGLE_NOT_CONSUMED) {
       await this.google.consume(productId, purchaseToken);
     }
-    return this.respond(userId, result.status, productId, result.gemsGranted);
+    const response = await this.respond(userId, result.status, productId, result.gemsGranted);
+    if (result.status === 'duplicate') {
+      const prior = await this.prisma.iapPurchase.findUniqueOrThrow({
+        where: { platform_storeTransactionId: key(record) },
+        select: { gemsGranted: true },
+      });
+      response.purchaseCredit = prior.gemsGranted;
+    } else {
+      response.purchaseCredit = result.gemsGranted;
+    }
+    return response;
   }
 
   /** App Store Server Notifications V2. Throws 401 on an invalid signature. */
