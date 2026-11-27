@@ -6,6 +6,7 @@ export interface VerifyPurchaseResponse {
   status: VerifyStatus;
   productId: string;
   gemsGranted: number;
+  purchaseCredit?: number;
   gems: number;
   coins: number;
 }

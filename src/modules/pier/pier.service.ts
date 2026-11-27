@@ -282,10 +282,19 @@ export class PierService {
     });
   }
 
+  async baitReceipt(id: string, key: string) {
+    const ticket = await this.db.baitOperation.findFirst({
+      where: { id: key, playerId: id, kind: 'ad' },
+      select: { baitGranted: true },
+    });
+    return { granted: !!ticket?.baitGranted, baitGranted: ticket?.baitGranted ?? 0 };
+  }
+
   async baitOffer(id: string) {
     return this.db.$transaction(async (tx) => {
       const save = await this.load(tx, id);
-      return { milestone: await this.adOffer(tx, id, save.day, true) };
+      const used = await tx.baitOperation.count({ where: { playerId: id, kind: 'ad', day: save.day } });
+      return { slots: Math.max(0, 3 - used), milestone: await this.adOffer(tx, id, save.day, true) };
     });
   }
 

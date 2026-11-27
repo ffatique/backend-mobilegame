@@ -206,6 +206,7 @@ model BaitOperation {
   day           DateTime @db.Date
   milestone     Int?
   transactionId String?  @unique
+  baitGranted   Int      @default(0)
 
   @@unique([playerId, milestone])
   @@unique([installation, session, milestone])
