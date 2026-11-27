@@ -19,6 +19,7 @@ model User {
   coins          Int              @default(0)
   createdAt      DateTime         @default(now())
   avatar         String?
+  baitOperations BaitOperation[]
   pierSave       PierSave?
   catches        PierCatch[]
   firstFriends   Friendship[]     @relation("first")
@@ -139,13 +140,14 @@ model IapPurchase {
 }
 
 model PierSave {
-  playerId String   @id @db.Uuid
-  player   User     @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  snapshot String   @default("") @db.Text
-  revision Int      @default(0)
-  mutation String?  @db.Uuid
-  bait     Int      @default(12)
-  day      DateTime @default(dbgenerated("(now() AT TIME ZONE 'UTC')::date")) @db.Date
+  playerId  String   @id @db.Uuid
+  player    User     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  snapshot  String   @default("") @db.Text
+  revision  Int      @default(0)
+  mutation  String?  @db.Uuid
+  bonusBait Int      @default(0)
+  bait      Int      @default(12)
+  day       DateTime @default(dbgenerated("(now() AT TIME ZONE 'UTC')::date")) @db.Date
 
   @@index([day])
   @@map("pier_saves")
@@ -177,4 +179,22 @@ model PierCatch {
 
   @@id([playerId, revision])
   @@map("pier_catches")
+}
+
+model BaitOperation {
+  id            String   @id @db.Uuid
+  playerId      String?  @db.Uuid
+  installation  String?  @db.Char(64)
+  session       String?  @db.Uuid
+  player        User?    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  kind          String
+  day           DateTime @db.Date
+  milestone     Int?
+  transactionId String?  @unique
+
+  @@unique([playerId, milestone])
+  @@unique([installation, session, milestone])
+  @@index([installation, day], map: "bait_operations_guest_quota")
+  @@index([playerId, day, kind], map: "bait_operations_quota")
+  @@map("bait_operations")
 }

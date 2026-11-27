@@ -64,7 +64,7 @@ Nas duas rotas de verificação, a resposta contém `status`, `productId`, `gems
 
 **Google Play.** Dê à conta de serviço de compras acesso ao app na Play Console e configure o JSON da credencial no ambiente. Na assinatura push, configure uma conta de serviço para assinar o token OIDC e a audiência esperada em `GOOGLE_RTDN_AUDIENCE`. O e-mail dessa conta deve coincidir com `GOOGLE_RTDN_PUSH_SERVICE_ACCOUNT`. [Notificações da Google Play](https://developer.android.com/google/play/billing/rtdn-reference)
 
-**AdMob.** Ao criar o bloco, teste a URL SSV com o campo User ID vazio. O servidor confirma o callback assinado sem conceder moedas. Configure a URL SSV em cada unidade recompensada e liste seus IDs numéricos em `ADMOB_REWARDED_AD_UNITS`, separados por vírgula. O backend confere a assinatura do Google e a unidade antes de creditar cinco moedas. Cada `transaction_id` pode gerar um único crédito. [Verificação do AdMob](https://developers.google.com/admob/android/ssv)
+**AdMob.** Ao criar o bloco, teste a URL SSV com o campo User ID vazio. O servidor confirma o callback assinado sem conceder moedas. Configure a URL SSV em cada unidade recompensada e liste seus IDs numéricos em `ADMOB_REWARDED_AD_UNITS`, separados por vírgula. O backend confere a assinatura do Google e a unidade antes do crédito. O bloco do My Little Pier usa a regra de três iscas descrita abaixo. Cada `transaction_id` pode gerar um único crédito. [Verificação do AdMob](https://developers.google.com/admob/android/ssv)
 
 ## Testes
 
@@ -98,3 +98,11 @@ O cliente Android usa `https://api.mylittlepier.com`. As rotas `/pier` exigem o 
 A migração `20261126010000_pier` cria índices para a data das iscas, o prefixo do nome, os dois lados da amizade e o histórico por jogador e revisão. A chave única do par torna a amizade simétrica e impede duplicatas. As relações com o jogador e a restrição que exige dois participantes diferentes também valem no banco.
 
 No painel do projeto Vercel, configure `CRON_SECRET` como Sensitive em Production. O agendamento em `vercel.json` usa `0 0 * * *` (UTC). O cron repõe o saldo de todas as contas com data anterior. A primeira leitura ou gravação após a virada aplica a mesma regra se o cron atrasar. A função diária e o PostgreSQL consomem recursos do plano contratado. Nenhum dado de save legado é importado pela migração.
+
+### Caixa de iscas do My Little Pier
+
+A API devolve a oferta na gravação de cada quinta captura. O jogo usa o bloco premiado Android `2697891384`. O cliente autenticado reserva uma exibição em `POST /pier/bait/ad` com um UUID e a contagem de capturas. O banco limita a três reservas por conta e dia UTC, inclusive entre aparelhos. Fechar a oferta antes de assistir preserva a vaga. O AdMob devolve o UUID em `custom_data` e o jogador em `user_id` para `GET /rewards/admob/ssv`. A assinatura, a unidade, o titular e a transação confirmam o crédito de três iscas. A callback de teste do console pode usar um usuário vazio.
+
+`POST /pier/bait/purchase` usa o JWT e uma chave UUID de idempotência. Uma gema compra três iscas. As iscas extras sobrevivem à reposição diária e o jogo gasta as do dia primeiro. A migração Prisma cria a tabela de operações e os índices de limite e deduplicação.
+
+Para o convidado, `/rewards/guest/availability`, `/rewards/guest/ad` e `/rewards/guest/status` usam uma credencial aleatória da instalação. O app Android guarda a credencial na área privada excluída do backup. O banco guarda o hash. O limite UTC sobrevive à troca de sessão. A confirmação do vídeo só acrescenta iscas à partida em memória que solicitou o anúncio.

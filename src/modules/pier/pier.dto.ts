@@ -31,3 +31,10 @@ export class SaveDto {
 export class FriendDto {
   @IsIn(['send', 'accept', 'decline']) action!: string;
 }
+
+export class BaitPurchaseDto {
+  @IsUUID() key!: string;
+}
+export class AdTicketDto extends BaitPurchaseDto {
+  @IsInt() @Min(5) @Max(2147483647) milestone!: number;
+}
