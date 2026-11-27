@@ -47,7 +47,7 @@ O jogo atual ganha moedas no aparelho. Para ativar compras online, falta integra
 
 ## Compras nas lojas e anúncios
 
-Cadastre os produtos reais do jogo em `GemPackDefinition` pelo Prisma Studio, um registro por plataforma (`APPLE` ou `GOOGLE`), com o `productId` da loja, a quantidade de `gems` e `isEnabled`. O catálogo começa vazio. Configure pacotes consumíveis de uma unidade por transação. As gemas ficam em saldo separado das moedas da bancada. Por padrão, os recibos de sandbox ficam registrados com crédito zero. Use `IAP_CREDIT_SANDBOX=true` no ambiente de testes para exercitar o crédito.
+O catálogo público em `GET /iap/google/catalog` devolve os IDs e quantidades habilitados. O preço localizado vem da Play no aparelho. Cadastre os produtos reais do jogo em `GemPackDefinition` pelo Prisma Studio, um registro por plataforma (`APPLE` ou `GOOGLE`), com o `productId` da loja, a quantidade de `gems` e `isEnabled`. O catálogo começa vazio. Configure pacotes consumíveis de uma unidade por transação. As gemas ficam em saldo separado das moedas da bancada. Por padrão, os recibos de sandbox ficam registrados com crédito zero. Use `IAP_CREDIT_SANDBOX=true` no ambiente de testes para exercitar o crédito.
 
 | Rota | Quem envia | Uso |
 | --- | --- | --- |
@@ -81,15 +81,19 @@ DATABASE_URL="$TEST_DATABASE_URL" npm run prisma:deploy
 npm run test:e2e -- --runInBand
 ```
 
-## Progresso e amizades da v0.10.0
+## Progresso e amizades
 
 O cliente Android usa `https://api.mylittlepier.com`. As rotas `/pier` exigem o JWT da conta. O servidor obtém o dono do progresso pelo token. A chave composta de provedor e identidade externa garante uma conta por jogador. A primeira leitura cria um save vazio com 12 iscas. O instantâneo privado guarda a economia da pescaria, o álbum, o cesto, os equipamentos, os postos, as missões e o barco. Os saldos comerciais de moedas e gemas do servidor continuam protegidos nas rotas de compras e recompensas.
 
 | Rota | Operação |
 | --- | --- |
 | `GET /pier/state` | Devolve o save, a revisão, as iscas do dia UTC e o perfil. |
+| `GET /pier/school` | Cardume persistente da conta, período do servidor e tentativa ativa. |
+| `POST /pier/cast` | Recebe `key`, `station` e o `fishId` opcional. Reserva o peixe e cobra a isca na mesma transação. |
+| `POST /pier/finish` | Recebe `attempt`, `key` e `outcome`. O encerramento usa as medidas da reserva. A captura exige ao menos 3,2 segundos. A tentativa expira em três minutos. |
+| `POST /pier/action` | Aplica a venda, melhoria, visita ou encomenda sobre a revisão do servidor. |
 | `POST /pier/wardrobe` | Recebe `item` e `action` (buy, equip, remove). Macacão (overalls), camiseta (shirt) e chapéu (hat) custam 5, 3 e 4 gemas. A resposta traz as peças compradas, a combinação vestida e o saldo. Uma repetição da compra devolve o estado atual. |
-| `POST /pier/state` | Grava `snapshot`, revisão esperada, UUID da operação, gasto de zero ou uma isca e captura opcional. O bloqueio de linha serializa o gasto e a reposição. Uma revisão antiga retorna 409. |
+| `POST /pier/state` | Responde 426. A conta mantém o último snapshot aceito antes da atualização. |
 | `GET /pier/stats`, `GET /pier/history?before=N` | Dias distintos de atividade em UTC, total de capturas, espécies, fotos distintas do álbum e recorde de comprimento, ou até 50 capturas da conta por página. Cada captura tem a revisão da gravação como chave e conserva a data da pescaria mesmo se o envio atrasar. |
 | `GET /pier/players?q=Ana` | Busca por prefixo de 2 a 32 caracteres, até 30 resultados com ID, nome e avatar. |
 | `GET /pier/friends` | Amizades e pedidos de entrada e saída da própria conta. |
@@ -107,3 +111,9 @@ A API devolve a oferta na gravação de cada quinta captura. O jogo usa o bloco 
 `POST /pier/bait/purchase` usa o JWT e uma chave UUID de idempotência. Uma gema compra três iscas. As iscas extras sobrevivem à reposição diária e o jogo gasta as do dia primeiro. A migração Prisma cria a tabela de operações e os índices de limite e deduplicação.
 
 Para o convidado, `/rewards/guest/availability`, `/rewards/guest/ad` e `/rewards/guest/status` usam uma credencial aleatória da instalação. O app Android guarda a credencial na área privada excluída do backup. O banco guarda o hash. O limite UTC sobrevive à troca de sessão. A confirmação do vídeo só acrescenta iscas à partida em memória que solicitou o anúncio.
+
+### Monitoramento da reposição
+
+Na Vercel, Runtime Logs registra o evento `bait.refill` com data UTC, duração, resultado e quantidade de contas alteradas. O PostgreSQL guarda cada execução bem-sucedida em `pier_refills`. A rota pública `/health/bait` responde 503 quando falta a execução esperada, com tolerância até 02h UTC. O workflow **Reposição diária de iscas**, em GitHub Actions, consulta essa rota às 02h17 e 04h17 UTC. As falhas aparecem nas notificações de Actions de quem recebe alertas do workflow.
+
+Os eventos `pier.cast.paid`, `pier.cast.replay`, `pier.finish`, `pier.finish.replay` e `pier.finish.duplicate_rejected` usam o mesmo ID de tentativa. A tabela `pier_attempts` conserva o débito, o exemplar, o horário e o desfecho, inclusive expirações.

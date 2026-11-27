@@ -53,17 +53,20 @@ describe('Bait economy with PostgreSQL', () => {
     expect(await state()).toMatchObject({ bait: 15, bonusBait: 3 });
   });
   it('offers every fifth catch and lets three verified views credit bait across retries', async () => {
-    let revision = (await state()).revision;
+    await state();
     await post('bait/ad', { key: randomUUID(), milestone: 5 }).expect(409);
     for (let count = 1; count <= 20; count++) {
-      const result = await post('state', {
-        revision: revision++,
-        mutation: randomUUID(),
-        snapshot: 'account',
-        spend: 0,
-        capture: { species: 0, length: 12, grams: 20, size: 'S', rare: false },
-      }).expect(201);
-      expect(result.body.offer).toBe(count % 5 === 0 && count <= 15 ? count : 0);
+      await db.pierCatch.create({
+        data: {
+          playerId: id,
+          revision: count,
+          species: 0,
+          length: 12,
+          grams: 20,
+          size: 'S',
+          rare: false,
+        },
+      });
       if (count % 5 || count === 20) continue;
       const key = randomUUID();
       await post('bait/ad', { key, milestone: count }).expect(201);
@@ -91,16 +94,7 @@ describe('Bait economy with PostgreSQL', () => {
     });
     await post('bait/ad', { key: randomUUID(), milestone: 20 }).expect(201);
     await db.pierSave.update({ where: { playerId: id }, data: { bait: 0 } });
-    expect(
-      (
-        await post('state', {
-          revision,
-          mutation: randomUUID(),
-          snapshot: 'account',
-          spend: 1,
-        }).expect(201)
-      ).body.bait,
-    ).toBe(11);
+    expect((await post('cast', { key: randomUUID(), station: 0 }).expect(201)).body.bait).toBe(11);
   });
   it('counts guest views per installation across sessions and releases only the signed receipt', async () => {
     const install = 'Installation ' + randomBytes(32).toString('hex');

@@ -142,17 +142,31 @@ describe('Player API with PostgreSQL', () => {
     const state = () => api.get('/pier/state').set('Authorization', bearer).expect(200);
     const initial = await state();
     expect(initial.body).toMatchObject({ bait: 12, revision: 0, snapshot: '' });
-    const payload = {
-      revision: 0,
-      mutation: randomUUID(),
-      snapshot: 'test-save',
-      spend: 1,
-      capture: { species: 3, rare: true, length: 56, grams: 805, size: 'L' },
-    };
-    const save = (body: object) => api.post('/pier/state').set('Authorization', bearer).send(body);
-    await Promise.all([save(payload).expect(201), save(payload).expect(201)]);
-    expect((await state()).body).toMatchObject({ bait: 11, revision: 1, snapshot: 'test-save' });
-    await save({ ...payload, mutation: randomUUID() }).expect(409);
+    const school = (await api.get('/pier/school').set('Authorization', bearer).expect(200)).body;
+    const fish = school.items[0];
+    const cast = { key: randomUUID(), station: 0, fishId: fish.id };
+    const post = (path: string, body: object) =>
+      api
+        .post('/pier/' + path)
+        .set('Authorization', bearer)
+        .send(body);
+    await post('state', { snapshot: 'test-save' }).expect(426);
+    const attempts = await Promise.all([
+      post('cast', cast).expect(201),
+      post('cast', cast).expect(201),
+    ]);
+    expect(attempts[0].body.id).toBe(attempts[1].body.id);
+    await post('cast', { ...cast, key: randomUUID() }).expect(409);
+    expect((await state()).body.bait).toBe(11);
+    const finish = { key: randomUUID(), attempt: cast.key, outcome: 'caught' };
+    await post('finish', finish).expect(409);
+    await db.$executeRaw`UPDATE pier_attempts SET "openedAt"=now()-interval '5 seconds' WHERE id=${cast.key}::uuid`;
+    await Promise.all([post('finish', finish).expect(201), post('finish', finish).expect(201)]);
+    await post('finish', { ...finish, key: randomUUID() }).expect(409);
+    const saved = (await state()).body;
+    expect(saved.revision).toBe(1);
+    await post('action', { key: randomUUID(), revision: 1, action: 'sell' }).expect(201);
+    expect(Number((await state()).body.snapshot.split('|')[1])).toBe(fish.rare ? 12 : 4);
     await db.pierSave.update({
       where: { playerId: id },
       data: { day: new Date('2000-01-01Z'), bait: 0 },
@@ -168,14 +182,29 @@ describe('Player API with PostgreSQL', () => {
       cron(),
       cron(),
       state(),
-      save({ revision: 1, mutation: randomUUID(), snapshot: 'second-save', spend: 1 }).expect(201),
+      post('cast', { key: randomUUID(), station: 0 }).expect(201),
     ]);
-    expect((await state()).body).toMatchObject({ bait: 11, revision: 2, snapshot: 'second-save' });
+    expect((await state()).body).toMatchObject({ bait: 11, revision: 2 });
     const history = await api.get('/pier/history').set('Authorization', bearer).expect(200);
     expect(history.body.items).toHaveLength(1);
-    expect(history.body.items[0]).toMatchObject(payload.capture);
-    const stats = await api.get('/pier/stats').set('Authorization', bearer).expect(200);
-    expect(stats.body).toEqual({ total: 1, species: 1, largest: 56, kind: 3, days: 1, album: 1 });
+    expect(history.body.items[0]).toMatchObject({
+      species: fish.species,
+      rare: fish.rare,
+      length: fish.length,
+      grams: fish.grams,
+    });
+    const attempt = (await api.get('/pier/school').set('Authorization', bearer)).body.active;
+    await db.$executeRaw`UPDATE pier_attempts SET "openedAt"=now()-interval '4 minutes' WHERE id=${attempt}::uuid`;
+    const expired = await post('finish', { attempt, key: randomUUID(), outcome: 'caught' }).expect(
+      201,
+    );
+    expect(expired.body.outcome).toBe('expired');
+    const second = await post('cast', { key: randomUUID(), station: 0 }).expect(201);
+    const empty = { attempt: second.body.id, key: randomUUID(), outcome: 'empty' };
+    await post('finish', empty).expect(201);
+    await post('finish', empty).expect(201);
+    await post('cast', { key: randomUUID(), station: 2 }).expect(409);
+    await api.get('/health/bait').expect(200);
   });
 
   it('counts distinct UTC days and album variants across duplicate catches', async () => {
@@ -191,7 +220,7 @@ describe('Player API with PostgreSQL', () => {
       });
     await api.get('/pier/state').set('Authorization', bearer).expect(200);
     const stats = await api.get('/pier/stats').set('Authorization', bearer).expect(200);
-    expect(stats.body).toMatchObject({ days: 2, species: 1, album: 2, total: 4, largest: 60 });
+    expect(stats.body).toMatchObject({ days: 2, species: 2, album: 3, total: 4, largest: 60 });
   });
 
   it('keeps wardrobe purchases and equipment on the player across retries', async () => {

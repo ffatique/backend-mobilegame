@@ -12,22 +12,24 @@ enum AuthProviderType {
 }
 
 model User {
-  id             String           @id @default(uuid()) @db.Uuid
+  id             String            @id @default(uuid()) @db.Uuid
   provider       AuthProviderType
-  providerUserId String           @db.VarChar(256)
-  name           String           @db.VarChar(32)
-  coins          Int              @default(0)
-  createdAt      DateTime         @default(now())
+  providerUserId String            @db.VarChar(256)
+  name           String            @db.VarChar(32)
+  coins          Int               @default(0)
+  createdAt      DateTime          @default(now())
   avatar         String?
+  swimmers       PierSwimmer[]
+  attempts       PierAttempt[]
   baitOperations BaitOperation[]
   activityDays   PierActivityDay[]
   pierSave       PierSave?
   catches        PierCatch[]
-  firstFriends   Friendship[]     @relation("first")
-  secondFriends  Friendship[]     @relation("second")
+  firstFriends   Friendship[]      @relation("first")
+  secondFriends  Friendship[]      @relation("second")
   refreshTokens  RefreshToken[]
   purchases      Purchase[]
-  gems           Int              @default(0)
+  gems           Int               @default(0)
   adRewardGrants AdRewardGrant[]
   iapPurchases   IapPurchase[]
 
@@ -210,4 +212,51 @@ model BaitOperation {
   @@index([installation, day], map: "bait_operations_guest_quota")
   @@index([playerId, day, kind], map: "bait_operations_quota")
   @@map("bait_operations")
+}
+
+model PierSwimmer {
+  id         String  @id @db.Uuid
+  playerId   String  @db.Uuid
+  player     User    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  station    Int
+  species    Int
+  slot       Int
+  rare       Boolean
+  percentile Int
+  length     Int
+  grams      Int
+
+  @@unique([playerId, station, species, slot])
+  @@map("pier_schools")
+}
+
+model PierAttempt {
+  playerId      String    @db.Uuid
+  player        User      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  id            String    @db.Uuid
+  station       Int
+  fishId        String?   @db.Uuid
+  species       Int?
+  rare          Boolean?
+  percentile    Int?
+  length        Int?
+  grams         Int?
+  openedAt      DateTime  @default(now()) @db.Timestamptz(6)
+  closedAt      DateTime? @db.Timestamptz(6)
+  outcome       String?
+  finishKey     String?   @db.Uuid
+  passAvailable Boolean
+  newRecord     Boolean   @default(false)
+
+  @@id([playerId, id])
+  @@map("pier_attempts")
+}
+
+model PierRefill {
+  id         BigInt   @id @default(autoincrement())
+  ranAt      DateTime @default(now()) @map("ran_at") @db.Timestamptz(6)
+  accounts   Int
+  durationMs Int      @map("duration_ms")
+
+  @@map("pier_refills")
 }
