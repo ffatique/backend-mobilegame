@@ -114,6 +114,6 @@ Para o convidado, `/rewards/guest/availability`, `/rewards/guest/ad` e `/rewards
 
 ### Monitoramento da reposição
 
-Na Vercel, Runtime Logs registra o evento `bait.refill` com data UTC, duração, resultado e quantidade de contas alteradas. O PostgreSQL guarda cada execução bem-sucedida em `pier_refills`. A rota pública `/health/bait` responde 503 quando falta a execução esperada, com tolerância até 02h UTC. O workflow **Reposição diária de iscas**, em GitHub Actions, consulta essa rota às 02h17 e 04h17 UTC. As falhas aparecem nas notificações de Actions de quem recebe alertas do workflow.
+Na Vercel, Runtime Logs registra o evento `bait.refill` com data UTC, duração, resultado e quantidade de contas alteradas. O PostgreSQL guarda cada execução bem-sucedida em `pier_refills`. A rota pública `/health/bait` responde 503 quando falta a execução esperada, com tolerância até 02h UTC.
 
 Os eventos `pier.cast.paid`, `pier.cast.replay`, `pier.finish`, `pier.finish.replay` e `pier.finish.duplicate_rejected` usam o mesmo ID de tentativa. A tabela `pier_attempts` conserva o débito, o exemplar, o horário e o desfecho, inclusive expirações.
