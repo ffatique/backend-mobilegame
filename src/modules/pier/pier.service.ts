@@ -149,7 +149,9 @@ export class PierService {
         const [open] = await tx.$queryRaw<
           Attempt[]
         >`SELECT id FROM pier_attempts WHERE "playerId"=${id}::uuid AND outcome IS NULL`;
-        if (open || !p.unlocked(dto.station) || (!state.bait && !state.bonusBait))
+        if (!state.bait && !state.bonusBait)
+          throw new ConflictException({ code: 'OUT_OF_BAIT', message: 'Out of bait' });
+        if (open || !p.unlocked(dto.station))
           throw new ConflictException('Cast unavailable');
         let fish: Specimen | undefined;
         const night = nightAt(new Date());
@@ -280,8 +282,16 @@ export class PierService {
     });
   }
 
-  private async adOffer(tx: Prisma.TransactionClient, id: string, day: Date) {
-    const milestone = await tx.pierCatch.count({ where: { playerId: id } });
+  async baitOffer(id: string) {
+    return this.db.$transaction(async (tx) => {
+      const save = await this.load(tx, id);
+      return { milestone: await this.adOffer(tx, id, save.day, true) };
+    });
+  }
+
+  private async adOffer(tx: Prisma.TransactionClient, id: string, day: Date, includeSkipped = false) {
+    const count = await tx.pierCatch.count({ where: { playerId: id } });
+    const milestone = includeSkipped ? count - count % 5 : count;
     if (!milestone || milestone % 5) return 0;
     const used = await tx.baitOperation.count({ where: { playerId: id, kind: 'ad', day } });
     if (used >= 3) return 0;

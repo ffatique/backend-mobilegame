@@ -53,6 +53,9 @@ export class PierController {
   @Post('wardrobe') wardrobe(@CurrentUser() u: { id: string }, @Body() dto: WardrobeDto) {
     return this.pier.wardrobe(u.id, dto);
   }
+  @Get('bait/offer') baitOffer(@CurrentUser() u: { id: string }) {
+    return this.pier.baitOffer(u.id);
+  }
   @Post('bait/purchase') buy(@CurrentUser() u: { id: string }, @Body() dto: BaitPurchaseDto) {
     return this.pier.baitOperation(u.id, dto.key, 'purchase');
   }
